@@ -1,13 +1,45 @@
-name: Endor Labs PR Scan
+name: Endor Labs Scan
 
-# Triggers on pull requests targeting your default branch.
+# Triggers on pull requests and on merges to the default branch.
 # Replace 'main' with your default branch name if different (e.g. 'master').
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 jobs:
-  scan:
+  # ── Full scan on merge to main ─────────────────────────────────────────────
+  # Runs after every merge so the platform reflects the latest baseline.
+  # Set ENDOR_NAMESPACE as a repository variable under
+  # Settings > Secrets and variables > Actions > Variables.
+  full-scan:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read         # Checkout code
+      id-token: write        # Keyless auth to Endor Labs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Remove or replace this step if your project uses a different build tool.
+      - name: Install dependencies
+        run: npm install
+
+      - name: Endor Labs scan
+        uses: endorlabs/github-action@v1
+        with:
+          namespace: ${{ vars.ENDOR_NAMESPACE }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── PR scan with triage comment ────────────────────────────────────────────
+  # Runs on pull requests, posts the standard Endor Labs findings comment,
+  # and then posts an interactive triage comment with numbered findings.
+  # Also set ENDOR_PROJECT_UUID as a repository variable.
+  pr-scan:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write   # Post triage comment
@@ -22,9 +54,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Runs the Endor Labs PR scan and posts the standard findings comment.
-      # Set ENDOR_NAMESPACE and ENDOR_PROJECT_UUID as repository variables
-      # under Settings > Secrets and variables > Actions > Variables.
       - name: Endor Labs scan
         uses: endorlabs/github-action@v1
         with:
@@ -41,7 +70,6 @@ jobs:
           sudo mv endorctl /usr/local/bin/endorctl
 
       # Posts the interactive triage comment with the numbered findings table.
-      # Skipped if the scan found no CI-blocking or CI-warning findings.
       - name: Post triage comment
         if: always()
         env:
