@@ -50,6 +50,7 @@ jobs:
           chmod +x endorctl
           sudo mv endorctl /usr/local/bin/endorctl
 
+      # Download the triage handler script at runtime — no local copy needed.
       # Parse the /endor command, create ignore entries, commit, and reply.
       - name: Handle triage command
         env:
@@ -62,4 +63,8 @@ jobs:
           REPO: ${{ github.repository }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           COMMENTER: ${{ github.event.comment.user.login }}
-        run: python3 scripts/handle_triage_command.py
+        run: |
+          curl -fsSL \
+            https://raw.githubusercontent.com/tsaekao-endor/endor-pr-triage/main/scripts/handle_triage_command.py \
+            -o /tmp/handle_triage_command.py
+          python3 /tmp/handle_triage_command.py

@@ -1,0 +1,74 @@
+name: Endor Labs Scan
+
+# Triggers on pull requests and on merges to the default branch.
+# Replace 'main' with your default branch name if different (e.g. 'master').
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  # ── Full scan on merge to main ─────────────────────────────────────────────
+  # Runs after every merge to keep the platform baseline up to date.
+  # Set ENDOR_NAMESPACE as a repository variable under
+  # Settings > Secrets and variables > Actions > Variables.
+  full-scan:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Replace with your project's dependency install command.
+      - name: Install dependencies
+        run: npm install
+
+      - name: Endor Labs scan
+        uses: endorlabs/github-action@v1
+        with:
+          namespace: ${{ vars.ENDOR_NAMESPACE }}
+          pr: false
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── PR scan with interactive triage comment ────────────────────────────────
+  # Runs on pull requests. After the scan, posts an interactive findings table
+  # that developers can reply to with /endor fp or /endor accept-risk commands.
+  # Also set ENDOR_PROJECT_UUID as a repository variable.
+  pr-scan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Replace with your project's dependency install command.
+      - name: Install dependencies
+        run: npm install
+
+      - name: Endor Labs scan
+        uses: endorlabs/github-action@v1
+        with:
+          namespace: ${{ vars.ENDOR_NAMESPACE }}
+          pr: true
+          enable_pr_comments: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Posts the interactive triage comment (only when findings are present).
+      # No scripts to copy — the action fetches them automatically.
+      - name: Post Endor Labs triage comment
+        if: always()
+        uses: tsaekao-endor/endor-pr-triage@main
+        with:
+          namespace: ${{ vars.ENDOR_NAMESPACE }}
+          project_uuid: ${{ vars.ENDOR_PROJECT_UUID }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

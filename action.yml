@@ -1,0 +1,42 @@
+name: 'Endor Labs PR Triage Comment'
+description: >
+  Fetches Endor Labs CI-blocking and CI-warning findings for the current PR
+  and posts an interactive triage comment. Developers can reply with
+  /endor fp or /endor accept-risk commands to create ignore entries without
+  leaving the PR.
+author: 'Endor Labs'
+
+inputs:
+  namespace:
+    description: 'Endor Labs tenant namespace (e.g. my-company)'
+    required: true
+  project_uuid:
+    description: 'Endor Labs project UUID for this repository'
+    required: true
+  github_token:
+    description: 'GitHub token with pull-requests:write permission'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install endorctl
+      shell: bash
+      run: |
+        curl -fsSL https://api.endorlabs.com/download/latest/endorctl_linux_amd64 \
+          -o /tmp/endorctl
+        chmod +x /tmp/endorctl
+        sudo mv /tmp/endorctl /usr/local/bin/endorctl
+
+    - name: Post triage comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        ENDOR_NAMESPACE: ${{ inputs.namespace }}
+        ENDOR_PROJECT_UUID: ${{ inputs.project_uuid }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        # Keyless OIDC auth — endorctl detects these automatically
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        ENDOR_GITHUB_ACTION_TOKEN: ${{ inputs.github_token }}
+      run: python3 ${{ github.action_path }}/scripts/post_triage_comment.py

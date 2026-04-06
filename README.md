@@ -1,8 +1,10 @@
 # Endor Labs PR Triage
 
-A GitHub Actions workflow that lets developers triage [Endor Labs](https://www.endorlabs.com) security findings directly from pull request comments — no platform login required.
+A GitHub Action and companion workflow that lets developers triage [Endor Labs](https://www.endorlabs.com) security findings directly from pull request comments — no platform login required.
 
 After an Endor Labs PR scan completes, a bot comment is posted with a numbered table of findings. Developers reply with simple commands to mark findings as false positives or accepted risks. The workflow automatically creates ignore entries in `.endorignore.yaml`, commits them to the PR branch, and replies with a confirmation.
+
+> **No scripts to copy.** The triage comment step is a single `uses:` line in your existing scan workflow. The triage handler downloads its script at runtime.
 
 ---
 
@@ -10,9 +12,10 @@ After an Endor Labs PR scan completes, a bot comment is posted with a numbered t
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  1. PR opened → endor-scan.yml runs                     │
+│  1. PR opened → your endor-scan.yml runs                │
 │     • Endor Labs scans the branch                       │
-│     • post_triage_comment.py posts a findings table     │
+│     • Post Endor Labs triage comment step fires         │
+│       (only when CI-blocking/warning findings exist)    │
 └────────────────────────┬────────────────────────────────┘
                          │
                          ▼
@@ -23,6 +26,7 @@ After an Endor Labs PR scan completes, a bot comment is posted with a numbered t
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │  3. endor-triage.yml fires                              │
+│     • Downloads handle_triage_command.py at runtime     │
 │     • Looks up finding UUIDs from the hidden map        │
 │     • Runs endorctl ignore for each finding             │
 │     • Commits .endorignore.yaml to the PR branch        │
@@ -34,7 +38,7 @@ After an Endor Labs PR scan completes, a bot comment is posted with a numbered t
 
 ## Example PR comment
 
-The bot posts a comment like this after every scan:
+The bot posts a comment like this after every scan (only when findings are present):
 
 > **View PR scans on Endor Labs →**
 >
@@ -80,22 +84,27 @@ Flags can be combined:
 
 ## Setup
 
-### 1. Copy the files into your repository
+### Step 1 — Add the triage comment step to your scan workflow
 
+In your existing Endor Labs PR scan job, add one step after the scan:
+
+```yaml
+- name: Post Endor Labs triage comment
+  if: always()
+  uses: tsaekao-endor/endor-pr-triage@main
+  with:
+    namespace: ${{ vars.ENDOR_NAMESPACE }}
+    project_uuid: ${{ vars.ENDOR_PROJECT_UUID }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
-your-repo/
-├── .github/
-│   └── workflows/
-│       ├── endor-scan.yml       ← triggers on pull_request
-│       └── endor-triage.yml     ← triggers on issue_comment
-└── scripts/
-    ├── post_triage_comment.py   ← posts the findings table
-    └── handle_triage_command.py ← handles /endor commands
-```
 
-Copy the `.github/workflows/` and `scripts/` directories from this repo into your repository.
+That's it. No scripts to copy. See [`templates/endor-scan.yml`](templates/endor-scan.yml) for a complete example.
 
-### 2. Configure repository variables
+### Step 2 — Add the triage handler workflow
+
+Copy [`templates/endor-triage.yml`](templates/endor-triage.yml) to `.github/workflows/endor-triage.yml` in your repository. This is a one-time setup. The script it runs is downloaded automatically at runtime from this repo — no local copy needed.
+
+### Step 3 — Configure repository variables
 
 Go to **Settings → Secrets and variables → Actions → Variables** and add:
 
@@ -115,40 +124,12 @@ endorctl api list \
   | jq -r '.list.objects[0].uuid'
 ```
 
-### 3. Configure workflow permissions
+### Step 4 — Configure workflow permissions
 
 Go to **Settings → Actions → General → Workflow permissions** and enable:
 
 - **Read and write permissions**
 - **Allow GitHub Actions to create and approve pull requests**
-
-### 4. Update the build step
-
-In `endor-scan.yml`, replace the `npm install` step with whatever your project uses to install dependencies (e.g. `pip install`, `mvn package`, `gradle build`). This step is required so Endor Labs can resolve your dependency tree.
-
-```yaml
-# For Node.js
-- name: Install dependencies
-  run: npm install
-
-# For Python
-- name: Install dependencies
-  run: pip install -r requirements.txt
-
-# For Java (Maven)
-- name: Build
-  run: mvn package -DskipTests
-```
-
-### 5. Update the branch filter
-
-In `endor-scan.yml`, update the `branches` filter to match your default branch:
-
-```yaml
-on:
-  pull_request:
-    branches: [main]   # or 'master', 'develop', etc.
-```
 
 ---
 
@@ -159,6 +140,12 @@ Both workflows use **keyless authentication** via GitHub Actions OIDC tokens. No
 This requires:
 - `id-token: write` permission on the job (already included in the templates)
 - The GitHub Actions OIDC integration enabled in your Endor Labs tenant
+
+---
+
+## When does the triage comment appear?
+
+The triage comment is only posted when the scan finds findings tagged as **CI Blocker** or **CI Warning** by your Endor Labs action policy. If a scan is clean, no comment is posted.
 
 ---
 
@@ -177,37 +164,22 @@ endorctl ignore \
   --comments="Triaged via PR comment by <github-username>"
 ```
 
-This appends an entry to `.endorignore.yaml` in the root of your repository:
-
-```yaml
-version: 1.0.0
-ignore:
-  - id: alice-1
-    username: alice@github
-    finding_name: 'GHSA-p6mc-m468-83gw: Prototype Pollution in lodash'
-    parent_name: npm://my-app@1.0.0
-    dependency_name: npm://lodash@4.17.4
-    vuln_id: GHSA-p6mc-m468-83gw
-    reason: false-positive
-    comments: Triaged via PR comment by alice
-```
-
-The entry is committed to the PR branch. When the branch is merged to your default branch, the ignore entry is picked up by all future scans.
-
-### Multiple teams, one ignore file
-
-All ignore entries go to `.endorignore.yaml` at the repository root. Entries are logically scoped by their content (`parent_name`, `dependency_name`, `vuln_id`) — not by file location. The `--prefix` flag (set to the commenter's GitHub username) ensures entry IDs are unique across contributors.
+This appends an entry to `.endorignore.yaml` in the root of your repository and commits it to the PR branch. When the PR is merged, the ignore entry is picked up by all future scans.
 
 ---
 
-## Files
+## Repository layout
 
-| File | Purpose |
-|------|---------|
-| `.github/workflows/endor-scan.yml` | Runs the Endor Labs PR scan and posts the triage comment |
-| `.github/workflows/endor-triage.yml` | Handles `/endor` commands posted in PR comments |
-| `scripts/post_triage_comment.py` | Fetches findings, builds the sorted findings table, posts to PR |
-| `scripts/handle_triage_command.py` | Parses commands, runs `endorctl ignore`, commits, replies |
+```
+endor-pr-triage/
+├── action.yml                       ← composite action (the uses: target)
+├── scripts/
+│   ├── post_triage_comment.py       ← fetches findings, builds table, posts comment
+│   └── handle_triage_command.py     ← parses /endor commands, runs endorctl ignore
+└── templates/
+    ├── endor-scan.yml               ← sample scan workflow (PR + push)
+    └── endor-triage.yml             ← sample triage handler workflow
+```
 
 ---
 
@@ -215,5 +187,5 @@ All ignore entries go to `.endorignore.yaml` at the repository root. Entries are
 
 - [Endor Labs](https://www.endorlabs.com) account with a project configured
 - GitHub repository with Actions enabled
-- `endorctl` — installed automatically by the workflow at runtime
+- `endorctl` — installed automatically by the action at runtime
 - Python 3.10+ — available by default on `ubuntu-latest` GitHub Actions runners
