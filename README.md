@@ -86,7 +86,7 @@ Flags can be combined:
 
 ### Step 1 — Add the triage comment step to your scan workflow
 
-In your existing Endor Labs PR scan job, add one step after the scan:
+In your existing Endor Labs PR scan job, add one step after the scan. The `namespace` is the same value you already pass to the scan step — nothing new to configure:
 
 ```yaml
 - name: Post Endor Labs triage comment
@@ -94,37 +94,16 @@ In your existing Endor Labs PR scan job, add one step after the scan:
   uses: tsaekao-endor/endor-pr-triage@main
   with:
     namespace: ${{ vars.ENDOR_NAMESPACE }}
-    project_uuid: ${{ vars.ENDOR_PROJECT_UUID }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-That's it. No scripts to copy. See [`templates/endor-scan.yml`](templates/endor-scan.yml) for a complete example.
+The action automatically resolves the project UUID from the repository name at runtime. See [`templates/endor-scan.yml`](templates/endor-scan.yml) for a complete workflow example.
 
 ### Step 2 — Add the triage handler workflow
 
 Copy [`templates/endor-triage.yml`](templates/endor-triage.yml) to `.github/workflows/endor-triage.yml` in your repository. This is a one-time setup. The script it runs is downloaded automatically at runtime from this repo — no local copy needed.
 
-### Step 3 — Configure repository variables
-
-Go to **Settings → Secrets and variables → Actions → Variables** and add:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `ENDOR_NAMESPACE` | Your Endor Labs tenant namespace | `my-company` |
-| `ENDOR_PROJECT_UUID` | UUID of this project in Endor Labs | `abc123def456` |
-
-To find your project UUID, run:
-
-```bash
-endorctl api list \
-  --namespace=<your-namespace> \
-  --resource=Project \
-  --output-type=json \
-  --filter='meta.name=="https://github.com/<org>/<repo>.git"' \
-  | jq -r '.list.objects[0].uuid'
-```
-
-### Step 4 — Configure workflow permissions
+### Step 3 — Configure workflow permissions
 
 Go to **Settings → Actions → General → Workflow permissions** and enable:
 

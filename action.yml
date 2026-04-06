@@ -11,8 +11,11 @@ inputs:
     description: 'Endor Labs tenant namespace (e.g. my-company)'
     required: true
   project_uuid:
-    description: 'Endor Labs project UUID for this repository'
-    required: true
+    description: >
+      Endor Labs project UUID for this repository. If not provided, it is
+      auto-detected from the repository name using the Endor Labs API.
+    required: false
+    default: ''
   github_token:
     description: 'GitHub token with pull-requests:write permission'
     required: true
@@ -40,3 +43,4 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         ENDOR_GITHUB_ACTION_TOKEN: ${{ inputs.github_token }}
       run: python3 ${{ github.action_path }}/scripts/post_triage_comment.py
+      # ENDOR_PROJECT_UUID is optional — the script auto-detects it from REPO if not set

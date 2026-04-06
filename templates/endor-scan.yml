@@ -65,10 +65,11 @@ jobs:
 
       # Posts the interactive triage comment (only when findings are present).
       # No scripts to copy — the action fetches them automatically.
+      # namespace is already set above for the scan step; project_uuid is
+      # auto-detected from the repository name if not explicitly provided.
       - name: Post Endor Labs triage comment
         if: always()
         uses: tsaekao-endor/endor-pr-triage@main
         with:
           namespace: ${{ vars.ENDOR_NAMESPACE }}
-          project_uuid: ${{ vars.ENDOR_PROJECT_UUID }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
