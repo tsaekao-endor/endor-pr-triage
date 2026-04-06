@@ -1,0 +1,65 @@
+name: Endor Labs Triage Handler
+
+# Triggers whenever a comment is created on an issue or pull request.
+# The job condition below filters this to PR comments containing /endor commands only.
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  triage:
+    # Only run when:
+    #   - The comment is on a pull request (not a plain issue)
+    #   - The comment body contains a supported /endor command
+    if: |
+      github.event.issue.pull_request != null &&
+      (contains(github.event.comment.body, '/endor fp') ||
+       contains(github.event.comment.body, '/endor accept-risk'))
+
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write   # Post reply comment
+      contents: write        # Commit .endorignore.yaml to PR branch
+      id-token: write        # Keyless auth to Endor Labs
+
+    steps:
+      # Resolve the PR branch name so we can check it out.
+      - name: Get PR branch
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          PR_DATA=$(gh pr view $PR_NUMBER --repo $REPO --json headRefName,headRefOid)
+          echo "branch=$(echo $PR_DATA | jq -r .headRefName)" >> $GITHUB_OUTPUT
+          echo "sha=$(echo $PR_DATA | jq -r .headRefOid)" >> $GITHUB_OUTPUT
+
+      # Checkout the PR branch so we can write .endorignore.yaml to it.
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      # Install endorctl to run the 'endorctl ignore' command.
+      - name: Install endorctl
+        run: |
+          curl -fsSL https://api.endorlabs.com/download/latest/endorctl_linux_amd64 -o endorctl
+          chmod +x endorctl
+          sudo mv endorctl /usr/local/bin/endorctl
+
+      # Parse the /endor command, create ignore entries, commit, and reply.
+      - name: Handle triage command
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENDOR_NAMESPACE: ${{ vars.ENDOR_NAMESPACE }}
+          # Keyless auth: endorctl detects these automatically in GitHub Actions
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENDOR_GITHUB_ACTION_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+        run: python3 scripts/handle_triage_command.py

@@ -1,0 +1,53 @@
+name: Endor Labs PR Scan
+
+# Triggers on pull requests targeting your default branch.
+# Replace 'main' with your default branch name if different (e.g. 'master').
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write   # Post triage comment
+      contents: read         # Checkout code
+      id-token: write        # Keyless auth to Endor Labs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Remove or replace this step if your project uses a different build tool.
+      - name: Install dependencies
+        run: npm install
+
+      # Runs the Endor Labs PR scan and posts the standard findings comment.
+      # Set ENDOR_NAMESPACE and ENDOR_PROJECT_UUID as repository variables
+      # under Settings > Secrets and variables > Actions > Variables.
+      - name: Endor Labs scan
+        uses: endorlabs/github-action@v1
+        with:
+          namespace: ${{ vars.ENDOR_NAMESPACE }}
+          pr: true
+          enable_pr_comments: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Installs endorctl so the triage comment script can call the API.
+      - name: Install endorctl
+        run: |
+          curl -fsSL https://api.endorlabs.com/download/latest/endorctl_linux_amd64 -o endorctl
+          chmod +x endorctl
+          sudo mv endorctl /usr/local/bin/endorctl
+
+      # Posts the interactive triage comment with the numbered findings table.
+      # Skipped if the scan found no CI-blocking or CI-warning findings.
+      - name: Post triage comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENDOR_NAMESPACE: ${{ vars.ENDOR_NAMESPACE }}
+          ENDOR_PROJECT_UUID: ${{ vars.ENDOR_PROJECT_UUID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: python3 scripts/post_triage_comment.py
